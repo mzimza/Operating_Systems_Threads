@@ -137,11 +137,15 @@ int counted[MAX_L][MAX_K]; /* ready data for reports */
 int committees[MAX_M]; /* 0 if not yet used, -1 if used and ended, [pthread] if in progress */
 node * reports = 0; /* list to store working report processes */
 node * end = 0; /* end of this list */
+node * waitnig_com_head = 0; /* list for new committees, if there are > 100 committees */
+node * waiting_com_end = 0; /* end of this list */
 
 int M;
 int K;
 int L;
 int done = 0;
+int working_threads = 0; /* counter for working committee threads */
+int wannabe_threads = 0;   /* counter for waiting committees, which are not yet threads */
 
 long long eligible = 0;
 long long valid = 0;
@@ -159,6 +163,8 @@ pthread_mutex_t rep_mutex; /* mutex ensuring exclusive access to reports list */
 pthread_mutexattr_t rep_attr;
 pthread_mutex_t com_mutex; /* mutex allowing only one at a time committee to write */
 pthread_mutexattr_t com_attr;
+//pthread_mutex_t server_mutex; /* mutex allowing only 100 threads at a time */
+//pthread_mutexattr_t server_attr;
 
 pthread_cond_t rep_wait;
 pthread_cond_t com_wait;
@@ -172,22 +178,26 @@ int msg_queues[QUEUES_NUMBER];
 
 void *handle_committee (void *data) 
 {
- //  printf("heheszki wontunio\n");
    int finished = 0;
    int m = 0;
    pid_t mesg_type = *(pid_t *)data;
    //printf("committee nr %d\n", mesg_type);
+   //fflush(stdout);
    free ((pid_t *)data);
    int err;
+   int oldtype;
+   if ((err = pthread_setcanceltype (PTHREAD_CANCEL_ASYNCHRONOUS, &oldtype)) != 0)
+      syserr (err, "setcanceltype");
+   
    /* send successful connection msg */
-   ComReturn com_r; //= {(long)mesg_type, 0, -1, -1};
+   ComReturn com_r;
    memset(&com_r, 0, sizeof(ComReturn));
-   com_r.mesg_type = 10*mesg_type;
+   com_r.mesg_type = MAX_PID + mesg_type;
    com_r.m = 0;
    com_r.sum_n = -1;
    com_r.w = -1;
    if (msgsnd(msg_queues[3], (void *) &com_r, sizeof(ComReturn) - sizeof(long), 0) != 0)
-      syserr(errno, "msgsnd new committee");
+      syserr(errno, "msgsnd new committee %d", (int)mesg_type);
    // rób swoje dalej
    ComMsg mesg = {0,0,0,0,0,0,0,0};
    int read_bytes = 0;
@@ -196,13 +206,11 @@ void *handle_committee (void *data)
    while (finished == 0) {
       if ((read_bytes = msgrcv(msg_queues[2], &mesg, sizeof(ComMsg) - sizeof(long), mesg_type, 0)) <= 0)
          syserr(errno, "msgrcv handle_committee");
-     // printf("Dostaje: %d\n", mesg.m);
-      if (mesg.l == 0){
+      /* first msg with i & j & m */     
+      if ((mesg.l == 0) && (m == 0)){
          c.i = mesg.i;
          c.j = mesg.j;
-         if (m == 0)
-            m = mesg.m;
-     //    printf("Handling committee nr %d\n", m);
+         m = mesg.m;
       }
       else {
          c.w = c.w + 1;
@@ -213,11 +221,7 @@ void *handle_committee (void *data)
          finished = 1;
    }
 
-   //printf("po skonczeniu odczytu\n");
-   //fflush(stdout);
-
    /* get mutex and update data */
-
    if ((err = pthread_mutex_lock(&mutex)) != 0)
       syserr (err, "lock failed");
    pthread_cleanup_push(pthread_mutex_unlock, &mutex);
@@ -225,8 +229,10 @@ void *handle_committee (void *data)
    all_com++;
    if ((writing_com > 0) || (reading_rep > 0)) {
       do {
-         if ((err = pthread_cond_wait(&rep_wait, &mutex)) != 0)
-            syserr (err, "rep_wait wait failed");  
+         printf("zaśnij komisjo\n");
+         fflush(stdout);
+         if ((err = pthread_cond_wait(&com_wait, &mutex)) != 0)
+            syserr (err, "com_wait wait failed");  
       } while ((writing_com > 0) || (reading_rep > 0));
    }
    writing_com++;
@@ -241,8 +247,8 @@ void *handle_committee (void *data)
 
    /* copy data */
    int k,l;
-   for (l = 1; l <= L; l++){
-      for (k = 1; k <= K; k++){
+   for (l = 1; l <= L; l++) {
+      for (k = 1; k <= K; k++) {
          if (c.candidates[l][k] != 0)
             counted[l][k] = counted[l][k] + c.candidates[l][k];
       }
@@ -263,8 +269,16 @@ void *handle_committee (void *data)
    writing_com--;
    all_com--;
    if (writing_com == 0) {
-      if ((err = pthread_cond_broadcast(&rep_wait)) != 0)
-         syserr (err, "pthread_cond broadcast rep_wait");
+      if (all_rep > 0) {
+         if ((err = pthread_cond_broadcast(&rep_wait)) != 0)
+            syserr (err, "pthread_cond broadcast rep_wait");
+      }
+      else {
+         printf("nie ma raportów, wiec budze komisje\n");
+         fflush(stdout);
+         if ((err = pthread_cond_signal(&com_wait)) != 0)
+            syserr (err, "pthread_cond signal com_wait");  
+      }
    }
    if ((err = pthread_mutex_unlock(&mutex)) != 0)
       syserr (err, "unlock failed");
@@ -278,8 +292,19 @@ void *handle_committee (void *data)
 
    committees[m] = -1;  
    
-   //printf("Committee nr %d ending...\n", m);
-   //fflush(stdout);
+   /*if ((err = pthread_mutex_lock(&server_mutex)) != 0)
+      syserr (err, "lock failed");
+   pthread_cleanup_push(pthread_mutex_unlock, &server_mutex);
+
+   working_threads--;
+
+
+   if ((err = pthread_mutex_unlock(&server_mutex)) != 0)
+      syserr (err, "unlock failed");
+   pthread_cleanup_pop(0);
+   */
+   printf("Committee nr %d ending...\n", m);
+   fflush(stdout);
 
    return 0;
 }
@@ -292,6 +317,9 @@ void *handle_report (void *data)
    //printf("%d pid raportu\n", pid);
    int l = init.l;
    int err;
+   int oldtype;
+   if ((err = pthread_setcanceltype (PTHREAD_CANCEL_ASYNCHRONOUS, &oldtype)) != 0)
+      syserr (err, "setcanceltype");
 
    if ((err = pthread_mutex_lock(&mutex)) != 0)
       syserr (err, "lock failed");
@@ -307,7 +335,7 @@ void *handle_report (void *data)
    if ((err = pthread_mutex_unlock(&mutex)) != 0)
       syserr (err, "unlock failed");
    pthread_cleanup_pop(0);
-   RepReturn1 rep_ret = {pid, L, done, K, eligible, valid, invalid};
+   RepReturn1 rep_ret = {pid, L, done, M, eligible, valid, invalid};
    if (msgsnd(msg_queues[1], (void *) &rep_ret, sizeof(RepReturn1) - sizeof(long), 0) != 0)
       syserr(errno, "msgsnd return msg from server to report %d\n", pid);
    if (l == 0) {
@@ -315,7 +343,7 @@ void *handle_report (void *data)
       int i, j;
       i = 1;
       while (i <= L) {
-         RepReturn2 rep_ret_i = {pid, i};   
+         RepReturn2 rep_ret_i = {pid, i, K};   
          memset(rep_ret_i.list, 0, sizeof(int)*MAX_K);
          for (j = 1; j <= K; j++){
             rep_ret_i.list[j] = counted[i][j];
@@ -329,7 +357,7 @@ void *handle_report (void *data)
    else {
       //send just list nr l
       int j;
-      RepReturn2 rep_ret_l = {pid, l};
+      RepReturn2 rep_ret_l = {pid, l, K};
       memset(rep_ret_l.list, 0, sizeof(int)*MAX_K);
       for (j = 1; j <= K; j++){
          rep_ret_l.list[j] = counted[l][j];
@@ -353,6 +381,8 @@ void *handle_report (void *data)
    pthread_cleanup_push(pthread_mutex_unlock, &mutex);
    reading_rep--;
    all_rep--;
+   printf("konczy sie raport\n");
+   fflush(stdin);
    if (reading_rep == 0) {
       if ((err = pthread_cond_broadcast(&com_wait)) != 0)
          syserr (err, "pthread_cond broadcast com_wait");
@@ -382,6 +412,7 @@ void exit_server(int sig)
       }
    }
    delete_err(&reports);
+  // delete_err(&waitnig_com_head);
    for (i = 0; i < QUEUES_NUMBER; i++){
       if (msg_queues[i] != -1)
          if (msgctl(msg_queues[i], IPC_RMID, 0) == -1)
@@ -401,6 +432,8 @@ void exit_server(int sig)
       syserr (err, "rep_mutex destroy failed");
    if ((err = pthread_mutex_destroy (&com_mutex)) != 0)
       syserr (err, "com_mutex destroy failed");  
+   //if ((err = pthread_mutex_destroy (&server_mutex)) != 0)
+   //  syserr (err, "server_mutex destroy failed");  
    exit(0);
 }
 
@@ -439,6 +472,10 @@ int main(int argc, char *argv[])
     syserr (err, "mutex init failed");
    if ((err = pthread_mutex_init(&rep_mutex, 0) != 0))
     syserr (err, "rep_mutex init failed");
+   if ((err = pthread_mutex_init(&com_mutex, 0) != 0))
+    syserr (err, "com_mutex init failed");
+  // if ((err = pthread_mutex_init(&server_mutex, 0) != 0))
+   // syserr (err, "server_mutex init failed");
 
    if ((err = pthread_cond_init(&rep_wait, 0)) != 0)
       syserr (err, "cond init rep_wait failed");
@@ -451,9 +488,9 @@ int main(int argc, char *argv[])
    int rep_number = 0;
    struct msqid_ds com_buf, rep_buf;
    int read_bytes = 0;
-   ComMsg com = {0,0,0,0,0,0,0,0};
-   RepMsg rep = {0,0,0};
    while (1) {
+      ComMsg com = {0,0,0,0,0,0,0,0};
+      RepMsg rep = {0,0,0};
       if (msgctl(msg_queues[2], IPC_STAT, &com_buf) == -1)
            syserr(errno, "msgctl check com_queue if empty");
       com_number = com_buf.msg_qnum;
@@ -465,34 +502,58 @@ int main(int argc, char *argv[])
                syserr(errno, "msgrcv committee");
          // zczytaj dane z kolejki, czy to aby na pewno nowa komisja jest
          //utworz watek obslugujacy komisje, o ile jest to nowa komisja, poznanie się
-         if (committees[com.m] == 0) {
-           // printf("new committee nr %d\n", com.pid);
-            // committee number com.m has never contacted server before
-            committees[com.m] = com.pid;
-            //utworz watek
-            if ((err = pthread_attr_init(&attr)) != 0 )
-               syserr(err, "attrinit committee nr %d", com.m);
-            if ((err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)) != 0)
-               syserr(err, "setdetach committee nr %d", com.m);
-            pid_t *pid = (pid_t *) malloc (sizeof(pid_t));
-            if (pid == NULL)
-               syserr (err, "malloc committee nr %d", com.m);
-            *pid = com.pid;
-            if ((err = pthread_create (threads + com.m, &attr, handle_committee, (void *)pid)) != 0)
-               syserr (err, "create pthread for committee nr %d", com.m); 
-         }
-         else {
-            // wyślij do danej komisji komunikat błędu
-            ComReturn com_r;
-            com_r.mesg_type = 10*com.pid;
-            com_r.m = -1;
-            com_r.sum_n = -1;
-            com_r.w = -1;
+         if (com.pid != 0) {
+            //wrzuc pod server_mutex
+            /*if ((err = pthread_mutex_lock(&server_mutex)) != 0)
+               syserr( err, "lock failed");
+            pthread_cleanup_push(pthread_mutex_unlock, &server_mutex);
+         */
+            if ((com.m < MAX_M) && (committees[com.m] == 0)) {
+               //printf("new committee nr %d %d\n", com.pid, com.m);   
+               // committee number com.m has never contacted server before
+               if ((err = pthread_attr_init(&attr)) != 0 )
+                  syserr(err, "attrinit committee nr %d", com.m);
+               if ((err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)) != 0)
+                  syserr(err, "setdetach committee nr %d", com.m);
+               pid_t *pid = (pid_t *) malloc (sizeof(pid_t));
+               if (pid == NULL)
+                  syserr (err, "malloc committee nr %d", com.m);
+               *pid = com.pid;
+           //    if (working_threads < MAX_T) {
+                  committees[com.m] = com.pid;
+                  if ((err = pthread_create (threads + com.m, &attr, handle_committee, (void *)pid)) != 0)
+                     syserr (err, "create pthread for committee nr %d", com.m); 
+             //     working_threads++;
+               /*}
+               else {
+                  wannabe_threads++;
+                  if (waitnig_com_head == 0) {
+                     init(&waitnig_com_head, com.p, 0);
+                     waiting_com_end = waiting_com_head;
+                  }
+                  else {
+                     add(&waitnig_com_end, com.p, 0);
+                  }
+               }
+               if ((err = pthread_mutex_unlock(&server_mutex)) != 0)
+                  syserr (err, "server_mutex unlock failed");
+               pthread_cleanup_pop(0);  
+            */
+            }
+            else {
+               // wyślij do danej komisji komunikat błędu
+               ComReturn com_r;
+               com_r.mesg_type = MAX_PID + com.pid;
+               com_r.m = -1;
+               com_r.sum_n = -1;
+               com_r.w = -1;
+               printf("Sent access denied nr %ld\n", com_r.mesg_type - MAX_PID);
+               fflush(stdout);
 
-            if (msgsnd(msg_queues[3], (void *) &com_r, sizeof(ComReturn) - sizeof(long), 0) != 0)
-               syserr(errno, "msgsnd another committee with nr %d\n", com.m);
+               if (msgsnd(msg_queues[3], (void *) &com_r, sizeof(ComReturn) - sizeof(long), 0) != 0)
+                  syserr(errno, "msgsnd another committee with nr %d\n", com.m);
+            }
          }
-
       }
       if (msgctl(msg_queues[0], IPC_STAT, &rep_buf) == -1)
            syserr(errno, "msgctl check rep_queue if empty");

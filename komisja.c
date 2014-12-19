@@ -50,12 +50,14 @@ void access_denied(int sig){
    exit(0);
 }
 
+int m;
+
 int main (int argc, char *argv[])
 {
    if (signal(SIGTERM,  access_denied) == SIG_ERR)
      syserr(errno, "signal");
 
-   int m;
+  
    int id, id2;
    m = atoi(argv[1]);
 
@@ -68,24 +70,24 @@ int main (int argc, char *argv[])
 
    /* send init msg to server */
    ComMsg mesg = {INIT_COM_KEY, getpid(), m, 0, 0, 0, 0, 0};
+ //  printf("Wysłała do serwera %d %d\n", (int)getpid(), m);
    if (msgsnd(id, (char *) &mesg, sizeof(ComMsg) - sizeof(long), 0) != 0)
       syserr(errno, "msgsnd init msg %d", m);
    int read_bytes;
    ComReturn com = {0,0,0,0};
-   if ((read_bytes = msgrcv(id2, &com, sizeof(ComReturn) - sizeof(long), 10*getpid(), 0)) <= 0)
+   if ((read_bytes = msgrcv(id2, &com, sizeof(ComReturn) - sizeof(long), MAX_PID + getpid(), 0)) <= 0)
       syserr(errno, "msgrcv init");
    if (com.m == -1){
       //zakończ się z komunikatem odmowa dostępu
       if (raise(SIGTERM) == -1)
          syserr(errno, "raise SIGTERM");
    }
-
+ // printf("odebrała od serwera: %d %d %d %d\n", com.mesg_type, com.m, com.sum_n, com.w);
    int x = 0;
    int l, k, n;
    int i, j;   
-   x = scanf("%d %d", &i, &j);
+   scanf("%d %d", &i, &j);
    //printf("i: %d, j: %d\n", i, j);
-   x = 0;
    ComMsg mesg1 = {getpid(), getpid(), m, 0, 0, 0, i, j};
       if (msgsnd(id, (char *) &mesg1, sizeof(ComMsg) - sizeof(long), 0) != 0)
          syserr(errno, "msgsnd %d", x);

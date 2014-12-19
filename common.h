@@ -41,8 +41,9 @@ W przypadku wątpliwości można zadać pytanie autorowi zadania P. Czarnikowi. 
 #define MAX_L 100
 #define MAX_K 100
 #define MAX_M 10000
+#define MAX_T 100
 
-#define MAXMESGDATA 1024
+#define MAX_PID 4194304
 
 #define  M_REP_KEY  1234L  /* kolejka komunikatów dla raportów */
 #define  M_REP_KEY_2 4321L /* kolejka komunikatów na odpowiedzi serwera na raport*/
@@ -90,6 +91,7 @@ typedef struct {
 typedef struct {
    long mesg_type;
    int l;
+   int K;
    int list[MAX_K];
 } RepReturn2;
 

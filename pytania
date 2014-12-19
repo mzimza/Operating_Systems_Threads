@@ -1,0 +1,10 @@
+1) jak bezpiecznie konczyc? czy można po prostu pthread_cancel?
+2) wtf z tym uninitialised values przy wysyłaniu, jezeli wszystko jest ładnie zainicjalizowane?
+-> rozumiem, że chodzi o padding, czy skoro są błędy przy valgrindzie, to czy musze dodawać tam dodatkową zmienną
+by się przez 8 dzieliło? czy mogę to tak zostawić, zakładając, ze na students jest 32-bitowa architektura?
+3) jak wyczyścić wątek ze wszystkiego co ma?
+4) jak usunąć mutex, który jest wciąż zajęty
+5) czy mogę sobie zrobić taki myk, że robie pid * 10?
+5) czemu nagle mam 42 messages w kolejce? o.o
+-> w jaki sposób jeden send może wysyłać tak wiele messageow? czy to dlatego, że zabiłam przed wczesnie komisje?
+6) jak działają cond_wait i cond_broadcast i co się wtedy z mutexem dzieje?

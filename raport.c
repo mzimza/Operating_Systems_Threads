@@ -109,13 +109,13 @@ typedef struct {
          syserr(errno, "msgrcv ret2");
       long long sum = 0;
       int j;
-      for (j = 1; j <= ret1.K; j++){
+      for (j = 1; j <= ret2.K; j++){
          sum = sum + ret2.list[j];
       }
       printf("%d %lld ", l, sum);
-      for (j = 1; j <= ret1.K; j++){
+      for (j = 1; j <= ret2.K; j++){
          printf("%d", ret2.list[j]);
-         if (j < ret1.K)
+         if (j < ret2.K)
             printf(" ");
       }
       printf("\n");
@@ -128,13 +128,13 @@ typedef struct {
       while (i <= ret1.L) {
          if ((read_bytes = msgrcv(id2, &ret3, sizeof(RepReturn2) - sizeof(long), getpid(), 0)) <= 0)
             syserr(errno, "msgrcv ret3");
-         for (j = 1; j <= ret1.K; j++){
+         for (j = 1; j <= ret3.K; j++){
             sum = sum + ret3.list[j];
          }
          printf("%d %lld ", i, sum);
-         for (j = 1; j <= ret1.K; j++){
+         for (j = 1; j <= ret3.K; j++){
             printf("%d", ret3.list[j]);
-            if (j < ret1.K)
+            if (j < ret3.K)
                printf(" ");
          }
          printf("\n");
