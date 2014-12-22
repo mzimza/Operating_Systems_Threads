@@ -1,99 +1,64 @@
+/* Maja Zalewska  */
+/* nr 336088      */
+/* Zadanie 2, SO  */
+
 #ifndef COMMON_H
 #define COMMON_H
 
-/*
-ZADANIE NR 2
+#define MAX_L 100     /*  0 < L < 100  lists */
+#define MAX_K 100     /*  0 < K < 100  candidates per list */
+#define MAX_M 10000   /*  0 < M < 10000 committees */
 
-Wprowadzenie
+#define MAX_PID 32768 /* maximal PID, as stated in /proc/sys/kernel/pid_max */
 
-Treścią zadania jest system służący do liczenia głosów w wyborach :), przy czym upraszczamy rzeczywistość i obsługujemy tylko jeden rodzaj wyborów i jeden globalny zbiór kandydatów (bez podziału na okręgi wyborcze itp.).
+#define  M_ALL_KEY  1234L   /* queue for all init msg */
+#define  M_REP_KEY_2 4321L  /* queue for replies from server to reports */
+#define  M_COM_KEY  5678L   /* queue for committee msg */
+#define  M_COM_KEY_2  8765L /* queue for replies from server to committees */
 
-Do napisania są w sumie trzy programy: serwer, komisja i raport.
-W wyborach startuje L * K kandydatów umieszczonych na 0 < L < 100 listach numerowanych od 1 do L.
- Na każdej liście znajduje się 0 < K < 100 kandydatów numerowanych od 1 do K. 
- Para (numer listy, numer kandydata) identyfikuje kandydata. Wyborca ma wskazać jednego kandydata spośród wszystkich.
-Jest 0 < M < 10000 lokali wyborczych numerowanych od 1 do M i odpowiadających im komisji.
-Komisja sumuje głosy oddane na poszczególnych kandydatów oraz liczy głosy nieważne i korzystając z programu komisja wysyła te dane na serwer.
-serwer sumuje głosy oddane na poszczególnych kandydatów i umożliwia pobranie raportu z bieżącymi wynikami.
-Program raport pozwala pobrać z serwera częściowe lub końcowe wyniki wyborów.
-Technologia
+#define  INIT_KEY     1L    /* msg_type for all initialisation */
 
-Komunikacja między klientami a serwerem odbywać się może wyłącznie przy pomocy kolejek komunikatów IPC Systemu V. W rozwiązaniu należy użyć stałej liczby kolejek.
+#define  COM_TYPE  0  /* init mesg process type for committee */
+#define  REP_TYPE  1  /* init mesg process type for report */
 
-Dokładny format komunikatów do ustalenia przez studenta. Zalecam zdefiniowanie odpowiednich typów oraz kluczy kolejek w pliku nagłówkowym włączanym do wszystkich programów.
-
-Do realizacji wielowątkowości na serwerze należy użyć biblioteki pthreads. Synchronizację między wątkami należy zapewnić wyłącznie za pomocą mechanizmów pthreads takich jak mutexy, zmienne warunkowe lub blokady rwlock.
-
-Dla potrzeb oceny poprawności rozwiązania można przyjąć, że kolejki komunikatów oraz mechanizmy pthreads są sprawiedliwe.
-
-Można założyć, a nie trzeba sprawdzać, że parametry wywołania programów oraz dane wejściowe są poprawne, a także że klienci
- nie będą niespodziewanie przerywani.
-
-
-Informacje organizacyjne
-
-Rozwiązania (tylko Makefile, pliki źródłowe i opcjonalny plik z opisem) należy nadsyłać za pomocą skryptu submit na adres: solab@mimuw.edu.pl w terminie do 22 grudnia, 23:59
-
-W przypadku wątpliwości można zadać pytanie autorowi zadania P. Czarnikowi. Przed zadaniem pytania warto sprawdzić, czy odpowiedź na nie nie pojawiła się na liście często zadawanych pytań.
-*/
-
-
-#define MAX_L 100
-#define MAX_K 100
-#define MAX_M 10000
-#define MAX_T 100
-
-#define MAX_PID 4194304
-
-#define  M_REP_KEY  1234L  /* kolejka komunikatów dla raportów */
-#define  M_REP_KEY_2 4321L /* kolejka komunikatów na odpowiedzi serwera na raport*/
-#define  M_COM_KEY  5678L /* kolejka komunikatów dla komisji */
-#define  M_COM_KEY_2  8765L  /* kolejka komunikatów na odpowiedzi serwera do komisji */
-
-#define  INIT_COM_KEY 1L
-#define  INIT_REP_KEY 2L
+typedef struct {      
+  long  mesg_type;    /* set to INIT_KEY */
+  pid_t pid;          /* PID of the process(report/committee) */
+  int   type;         /* COM_TYPE if committee, REP_TYPE if report */
+  int   ml;           /* nr committee if type == COM_TYPE, else (0 if no list specified, else nr of the list) */
+  int   padding;      /* added to have 8*x bytes in a message */
+} InitMsg;
 
 typedef struct {
-  long   mesg_type;
-  pid_t  pid; 
-  int    m; 
-  int    l;
-  int    k;
-  int    n;
-  int    i;
-  int    j;
+  long   mesg_type; /* set to PID of committee */
+  int    m;         /* number of committee or -1 if committee ended sending input */
+  int    l;         /* after successful conncection to server first set to 0, then nr of list */
+  int    k;         /* when l == 0 set to nr of eligible voters, then nr of candidate */
+  int    n;         /* when l == 0 set to nr of valid+invalid votes, then nr of voted for lk */
 } ComMsg;
 
 typedef struct {
-  long   mesg_type;
-  int    m;
-  int    sum_n;
-  int    w;
- // int    x;
+  long   mesg_type; /* after first ComMsg set to PID+MAX_PID(for response to initialisation msg), then set to PID */
+  int    sum_n;     /* all valid votes */
+  int    w;         /* if initialisation successful set to 0, else -1, then number of entries */
 } ComReturn;
 
 typedef struct {
-  long   mesg_type;  
-  pid_t  pid;
-  int    l;   
-} RepMsg;
-
-typedef struct {
-  long   mesg_type;  
-  int    L;   
-  int    x;
-  int    K;
-  long long    y;
-  long long    z;
-  long long    v;
+  long   mesg_type;   /* PID of the report */
+  int    L;           /* number of all lists */
+  int    x;           /* number of done committees */
+  int    K;           /* number of all committees */
+  long long    y;     /* number of eligible voters */
+  long long    z;     /* number of valid votes */
+  long long    v;     /* number of invalid votes */
+  int padding;        /* added to have 8*x bytes in a message */
 } RepReturn1;
 
 typedef struct {
-   long mesg_type;
-   int l;
-   int K;
-   int list[MAX_K];
+   long mesg_type;          /* PID of the report */ 
+   int l;                   /* number of currently printed list */
+   int K;                   /* number of candidates per list */
+   long long list[MAX_K];   /* data with how many votes for candidate lk */
 } RepReturn2;
-
 
 #endif

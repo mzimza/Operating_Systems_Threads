@@ -1,0 +1,19 @@
+/* Maja Zalewska  */
+/* nr 336088      */
+/* Zadanie 2, SO  */
+
+1. Komunikacja klient - serwer
+
+Komunikacja pomiędzy klientami i serwerem odbywa się przy pomocy kolejek komunikatów. Używam 1 kolejki na inicjalizujące wiadomości od klientów do serwera, z której w nieskończonej pętli serwer odbiera komunikaty. Dla komisji przeznaczone są jeszcze dwie dodatkowe kolejki - jedna na przesyłanie danych zczytywanych z wejścia, druga na odbieranie komunikatów od serwera (komunikat pomyślnego/niepomyślnego połączenia, komunikat zawierający wyniki). Dla raportów używam dodatkowo jednej kolejki - do odbioru wyników, jako że raport tylko raz wysyła wiadomość do serwera.
+
+2. Problem czytelników i pisarzy z zadania, synchronizacja
+
+Do rozwiązania tego problemu użyłam blokady rwlock. Dodatkowo mam jeden mutex na listę zawierającą raporty, żeby bezpiecznie usuwać i dodawać do niej obsługiwane raporty.
+
+W szczególności nie potrzeba używać mutexów do ochrony tablicy committees[MAX_M], w której przechowywane są informacje o procesie komisja m, gdyż serwer w każdym obrocie pętli zabiera z kolejki tylko jedną wiadomość, więc tylko on i pózniej dany jeden wątek odwolują się do danej zmiennej i ją ustawiają i to też każdy tylko jeden raz.
+
+3. Pliki common.h i list.h
+
+W common.h zdefiniowane są struktury message'ów, klucze kolejek oraz inne zmienne, używane przez serwera i klientów.
+W list.h zaimplementowana jest lista, używana w serwerze do przechowywania informacji o raportach.
+
